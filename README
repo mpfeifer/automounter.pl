@@ -1,0 +1,4 @@
+Perlprogram that periodically checks for the existance of several
+partititions in /dev/disk/by-id.  In case partition is found it is
+mounted. This works in userspace if root prepares /etc/fstab well.
+
