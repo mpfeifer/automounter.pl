@@ -2,18 +2,17 @@
 
 use strict;
 
+my $configfile="/home/matthias/.automounter";
 my $prefix="/dev/disk/by-id";
-my @partitions=("usb-CREATIVE_ZEN_Stone_Plus_F03A092D62B24C19-0:0-part1",
-                "usb-Multi_Flash_Reader_058F0O1111B1-0:0-part1",
-		"usb-Sony_DSC-W115_D395A071B042-part1");
-my @mountpoints=("/media/zenstone", "/media/kartenleser", "/media/cybershot");
+my @partitions;
+my @mountpoints;
 my @mounttime;
-my @mypartition;
-my $daemon_timeout=15;
+my @mypartitions;
+my $daemon_timeout=10;
 my $inactive_timeout=600;
 my $debug=1;
 my $logfile="automounter.log";
-my $logto="file";
+my $logto="stderr";
 
 sub debug {
     my $message = shift;
@@ -21,7 +20,11 @@ sub debug {
     if ($debug) {
 	if ($logto =~ /file/)
 	{
-	    open($hlogfile, ">>", $logfile) or die "Cannot open logfile $logfile for writing";
+	    open($hlogfile, ">>", $logfile);
+	    if (not defined($hlogfile)) {
+		debug("Cannot open logfile $logfile for writing");
+		exit(1);
+	    }
 	    print $hlogfile "$message\n";
 	    close($hlogfile);
 	}
@@ -55,8 +58,12 @@ sub partition_is_not_mounted
     my $mountoutput;
     my $MOUNTP;
     my $mountflag=1;
-    debug("Check if anything is mounted to $mountpoints[$pindex]");
-    open($MOUNTP,"/bin/mount|") or die "could not execute mount command";
+    debug("[INFO] Check if anything is mounted to $mountpoints[$pindex]");
+    open($MOUNTP,"/bin/mount|");
+    if (not defined $MOUNTP) {
+	debug("[FATAL] could not execute mount command");
+	exit(1);
+    }
     while (<$MOUNTP>) {
 	if (m/$mountpoints[$pindex]/)
 	{
@@ -72,19 +79,35 @@ sub partition_is_not_mounted
 sub initialize() {
     my $index;
     my $mountflag;
-    if ($#mountpoints != $#partitions) {
-	debug("[FATAL] Number of mountpoints doesn't match number of partitions");
+    my $hconfigf;
+    my $partition;
+    my $mountpoint;
+    my $index=0;
+    open($hconfigf, "<", $configfile);
+    if (not defined($hconfigf)) {
+	debug("[FATAL] Could not open configuration file $configfile");
 	exit(1);
     }
-    # each partitions needs an entry in @mounttime
-    # partitions that are already mounted are considered non of my business
-    foreach $index (0..$#partitions) {
-	$mountflag=partition_is_not_mounted($index);
+    while (<$hconfigf>) {
+	m/^([:a-zA-Z0-9_-]+) ([a-zA-Z0-9\/_-]+)$/;
+	$partition=$1;
+	$mountpoint=$2;
+	push @partitions, $partition;
+	push @mountpoints, $mountpoint;
+	print "[$1][$2]\n";
+	if (! -d $mountpoint) {
+	    debug("[FATAL] invalid mountpoint \"$mountpoint\"");
+	    exit(1);
+	}
+	# each partitions needs an entry in @mounttime
+	# partitions that are already mounted are considered non of my business
 	push @mounttime, 0;
+	$mountflag=partition_is_not_mounted($index);
 	push @mypartitions, $mountflag;
-	if ($mountflag) {
+	if (! $mountflag) {
 	    debug("[INFO] Partition $partitions[$index] is already mounted at startup and will not be considered");
 	}
+	$index=$index+1;
     }
 }
 
@@ -95,7 +118,12 @@ sub unmount_inactive_partition {
     my $mounted=0;
     # now compare every line of lsof with $mounpoint
     # if any mach is found the partition will not be unmounted now
-    open($LSOFPIPE, "/usr/bin/lsof|") or die "could not execute lsof";
+    open($LSOFPIPE, "/usr/bin/lsof|");
+    if (not defined($LSOFPIPE)) {
+	debug("[FATAL]could not execute lsof");
+	exit(1);
+    }
+	
     while (<$LSOFPIPE>) {
 	if (m/$mountpoint/) {
 	    debug("[INFO] Partition $mountpoint is still in use");
@@ -110,6 +138,7 @@ sub unmount_inactive_partition {
     }
 }
 
+initialize();
 daemonize();
 
 # main infinite loop
