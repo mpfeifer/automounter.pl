@@ -2,7 +2,7 @@
 
 use strict;
 
-my $configfile="/home/matthias/.automounter";
+my $configfile=".automounter";
 my $prefix="/dev/disk/by-id";
 my @partitions;
 my @mountpoints;
@@ -22,7 +22,8 @@ sub debug {
 	{
 	    open($hlogfile, ">>", $logfile);
 	    if (not defined($hlogfile)) {
-		debug("Cannot open logfile $logfile for writing");
+		print STDERR "$message\n";
+		print STDERR "[FATAL] Cannot open logfile $logfile for writing\n";
 		exit(1);
 	    }
 	    print $hlogfile "$message\n";
@@ -83,31 +84,34 @@ sub initialize() {
     my $partition;
     my $mountpoint;
     my $index=0;
-    open($hconfigf, "<", $configfile);
+    my $cf="$ENV{HOME}/$configfile";
+
+    open($hconfigf, "<", $cf);
     if (not defined($hconfigf)) {
 	debug("[FATAL] Could not open configuration file $configfile");
 	exit(1);
     }
     while (<$hconfigf>) {
-	m/^([:a-zA-Z0-9_-]+) ([a-zA-Z0-9\/_-]+)$/;
-	$partition=$1;
-	$mountpoint=$2;
-	push @partitions, $partition;
-	push @mountpoints, $mountpoint;
-	print "[$1][$2]\n";
-	if (! -d $mountpoint) {
-	    debug("[FATAL] invalid mountpoint \"$mountpoint\"");
-	    exit(1);
+	if (m/^PART=([:a-zA-Z0-9_-]+) ([a-zA-Z0-9\/_-]+)$/) {
+	    $partition=$1;
+	    $mountpoint=$2;
+	    push @partitions, $partition;
+	    push @mountpoints, $mountpoint;
+	    print "[$1][$2]\n";
+	    if (! -d $mountpoint) {
+		debug("[FATAL] invalid mountpoint \"$mountpoint\"");
+		exit(1);
+	    }
+	    # each partitions needs an entry in @mounttime
+	    # partitions that are already mounted are considered non of my business
+	    push @mounttime, 0;
+	    $mountflag=partition_is_not_mounted($index);
+	    push @mypartitions, $mountflag;
+	    if (! $mountflag) {
+		debug("[INFO] Partition $partitions[$index] is already mounted at startup and will not be considered");
+	    }
+	    $index=$index+1;
 	}
-	# each partitions needs an entry in @mounttime
-	# partitions that are already mounted are considered non of my business
-	push @mounttime, 0;
-	$mountflag=partition_is_not_mounted($index);
-	push @mypartitions, $mountflag;
-	if (! $mountflag) {
-	    debug("[INFO] Partition $partitions[$index] is already mounted at startup and will not be considered");
-	}
-	$index=$index+1;
     }
 }
 
